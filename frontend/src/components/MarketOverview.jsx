@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import TradingViewWidget from './ChartOutput';
 
 const MarketOverview = () => {
   const [marketData, setMarketData] = useState(null);
@@ -61,41 +62,21 @@ const MarketOverview = () => {
     return (
       <div style={{
         padding: '1rem',
-        paddingBottom: '5rem',
         backgroundColor: '#f5f5f5',
         borderRadius: '8px',
         marginTop: '1rem',
         marginBottom: '2rem',
-        minHeight: '400px',
         display: 'flex',
         justifyContent: 'center',
-        alignItems: 'center'
+        alignItems: 'center',
+        flexDirection: 'column',
+        width: '100%',
+        minHeight: '300px'
       }}>
         {selectedItem ? (
-          <div style={{ 
-            textAlign: 'center', 
-            padding: '1rem', 
-            width: '100%',
-            height: '450px',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'flex-start',
-            alignItems: 'center'
-          }}>
-            <h3 style={{ marginBottom: '1rem' }}>{selectedItem.name} 차트</h3>
-            <div id="chart-container" style={{ 
-              width: '100%', 
-              height: '400px', 
-              background: '#fff', 
-              border: '1px solid #eee',
-              borderRadius: '4px',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
-            }}>
-              {/* 차트가 여기에 렌더링됩니다 */}
-            </div>
-          </div>
+          <TradingViewWidget item={selectedItem} />
         ) : (
-          <div style={{ textAlign: 'center', color: '#666', paddingBottom: '2rem' }}>
+          <div style={{ textAlign: 'center', color: '#666', paddingBottom: '2rem', paddingTop: '2rem', width: '100%', minHeight: '250px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <p>항목을 선택하여 차트를 표시합니다.</p>
           </div>
         )}
