@@ -218,9 +218,10 @@ def naver_finance_market(request):
                 'status': status
             }
             
-            # 카테고리별 분류
-            if 'usd-krw' in symbol or '원/달러' in item.get('name', ''):
+            # 카테고리별 분류 - 로깅 추가
+            if 'krw' in symbol and symbol.startswith('krw-'):
                 market_data['currencies'].append(result_item)
+                logger.info(f"환율 항목 추가: {item.get('name', '')}, 심볼: {symbol}")
             elif 'wti' in symbol or 'oil' in symbol or 'gold' in symbol:
                 market_data['commodities'].append(result_item)
             else:
@@ -229,6 +230,9 @@ def naver_finance_market(request):
         # 결과 캐싱 (5분)
         if indices_data:
             logger.info(f"시장 데이터 캐싱 (항목 수: {len(indices_data)})")
+            logger.info(f"환율 항목 수: {len(market_data['currencies'])}")
+            logger.info(f"원자재 항목 수: {len(market_data['commodities'])}")
+            logger.info(f"지수 항목 수: {len(market_data['indices'])}")
             cache.set(cache_key, market_data, 300)
         
         logger.info(f"네이버 금융 시장 데이터 로드 완료: {len(indices_data)}개 항목")

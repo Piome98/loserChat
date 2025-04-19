@@ -621,26 +621,49 @@ def crawl_naver_market_indices():
             
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            # 주요 지수 정보 추출 (다우, 나스닥, S&P500)
-            world_indices = soup.select('.section_stock .data_lst li')
+            # 주요 지수 정보 추출 - 업데이트된 선택자
+            # 새로운 선택자: .data_lst li 태그 또는 .market_data .data_lst li 태그
+            world_indices = soup.select('.market_data .data_lst li') or soup.select('.data_lst li')
             
             # 지수 이름 매핑 (간략화를 위해)
             index_names = {
                 '다우': '다우존스',
-                'NASDAQ': '나스닥',
+                '나스닥': '나스닥',
                 'S&P': 'S&P 500',
-                '니케이': '니케이225'
+                '항셍': '항셍지수'
             }
+            
+            # 크롤링할 지수 목록 (프론트엔드와 일치시키기 위함)
+            target_indices = ['다우', '나스닥', 'S&P', '항셍']
             
             for index_item in world_indices:
                 try:
-                    name_elem = index_item.select_one('.stock_name a')
+                    # 해외증시 데이터가 있는지 확인
+                    point_status = index_item.select_one('.point_status')
+                    if not point_status:
+                        continue
+                    
+                    # 지수명 가져오기
+                    name_elem = index_item.select_one('.dt a') or index_item.select_one('dt a')
                     if not name_elem:
                         continue
                     
-                    name_text = name_elem.text.strip()
-                    # 주요 지수 필터링
-                    if not any(key in name_text for key in index_names.keys()):
+                    # 지수명 추출 - blind 태그가 있을 수 있음
+                    blind_elem = name_elem.select_one('.blind')
+                    name_text = blind_elem.text.strip() if blind_elem else name_elem.text.strip()
+                    
+                    logger.info(f"지수명 텍스트: {name_text}")
+                    
+                    # 지수가 타겟 목록에 있는지 확인
+                    included = False
+                    for target in target_indices:
+                        if target.lower() in name_text.lower():
+                            # 대소문자 구분 없이 비교
+                            included = True
+                            break
+                    
+                    # 타겟 목록에 없으면 건너뛰기
+                    if not included:
                         continue
                     
                     # 지수 이름 매핑
@@ -651,26 +674,35 @@ def crawl_naver_market_indices():
                     else:
                         name = name_text
                     
-                    # 심볼 생성 (간단하게)
-                    symbol = name.lower().replace(' ', '-').replace('&', 'and')
+                    # 심볼 생성 (심볼은 URL에서 추출 가능한 경우)
+                    symbol = ""
+                    if name_elem.get('href'):
+                        href = name_elem.get('href')
+                        if 'symbol=' in href:
+                            symbol = href.split('symbol=')[1].split('&')[0].lower()
+                        else:
+                            symbol = name.lower().replace(' ', '-').replace('&', 'and')
+                    else:
+                        symbol = name.lower().replace(' ', '-').replace('&', 'and')
                     
                     # 가격 정보
-                    price_elem = index_item.select_one('.stock_current')
-                    price = price_elem.text.strip() if price_elem else '0'
+                    strong_elem = point_status.select_one('strong')
+                    price = strong_elem.text.strip() if strong_elem else '0'
                     
-                    # 변화량과 변화율
-                    change_elems = index_item.select('.stock_up, .stock_down')
+                    # 변화량
+                    em_elem = point_status.select_one('em')
+                    change = em_elem.text.strip() if em_elem else '0'
                     
-                    if change_elems and len(change_elems) >= 2:
-                        change = change_elems[0].text.strip()
-                        percent = change_elems[1].text.strip().replace('(', '').replace(')', '')
-                        
-                        # 상태 결정
-                        status = 'up' if 'stock_up' in change_elems[0].get('class', []) else 'down'
-                    else:
-                        change = '0'
-                        percent = '0%'
-                        status = 'unchanged'
+                    # 변화율과 상태 (상승/하락/보합)
+                    span_elem = point_status.select_one('span')
+                    percent = span_elem.text.strip().replace('%', '') if span_elem else '0'
+                    
+                    # 상태 결정
+                    status = 'unchanged'
+                    if 'point_up' in index_item.get('class', []) or 'point_up' in point_status.get('class', []):
+                        status = 'up'
+                    elif 'point_dn' in index_item.get('class', []) or 'point_dn' in point_status.get('class', []):
+                        status = 'down'
                     
                     indices_data.append({
                         'name': name,
@@ -700,96 +732,180 @@ def crawl_naver_market_indices():
             
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            # 미국 달러 환율 정보
-            usd_item = soup.select_one('#exchangeList .data_lst li:first-child')
-            if usd_item:
+            # 환율 정보 가져오기
+            exchange_items = soup.select('#exchangeList li') or soup.select('.data_lst li')
+            
+            # 추출할 환율 정보
+            exchange_currency_map = {
+                'usd': {'name': '원/달러', 'symbol': 'krw-usd'},
+                'jpy': {'name': '원/엔', 'symbol': 'krw-jpy'},
+                'cny': {'name': '원/위안', 'symbol': 'krw-cny'},
+                'eur': {'name': '원/유로', 'symbol': 'krw-eur'}
+            }
+            
+            # 환율 정보 추출
+            for exchange_item in exchange_items:
                 try:
-                    name = '원/달러'
-                    price_elem = usd_item.select_one('.value')
+                    # 환율 ID나 클래스 확인
+                    item_id = exchange_item.get('id', '')
+                    item_data = None
+                    
+                    # 통화 종류 확인
+                    for key, data in exchange_currency_map.items():
+                        if key in item_id.lower() or key in str(exchange_item).lower():
+                            item_data = data
+                            break
+                    
+                    # 지원하는 통화가 아니면 건너뛰기
+                    if not item_data:
+                        continue
+                    
+                    # 환율 가격
+                    price_elem = exchange_item.select_one('.value') or exchange_item.select_one('span.num')
                     price = price_elem.text.strip() if price_elem else '0'
                     
-                    change_elem = usd_item.select_one('.change')
+                    # 변화량
+                    change_elem = exchange_item.select_one('.change') or exchange_item.select_one('span.num2')
                     change = change_elem.text.strip() if change_elem else '0'
                     
-                    # 상태 확인
-                    status_elem = usd_item.select_one('.blind')
-                    if status_elem and '상승' in status_elem.text:
+                    # 상태 확인 (상승/하락)
+                    status = 'unchanged'
+                    if exchange_item.select_one('.up') or ('class' in exchange_item.attrs and 'up' in exchange_item['class']):
                         status = 'up'
-                        change = f"+{change}"
-                    elif status_elem and '하락' in status_elem.text:
+                        if not change.startswith('+'):
+                            change = f"+{change}"
+                    elif exchange_item.select_one('.down') or ('class' in exchange_item.attrs and 'down' in exchange_item['class']):
                         status = 'down'
-                        change = f"-{change}"
-                    else:
-                        status = 'unchanged'
+                        if not change.startswith('-'):
+                            change = f"-{change}"
                     
-                    # 변화율 계산
+                    # 변화율 계산 (환율 페이지는 따로 변화율을 표시하지 않을 수 있으므로)
                     try:
                         price_float = float(price.replace(',', ''))
-                        change_float = float(change.replace('+', '').replace('-', '').replace(',', ''))
-                        percent = f"{(change_float / price_float * 100):.2f}%"
+                        change_float = float(change.replace(',', '').replace('+', '').replace('-', ''))
+                        percent = f"{(change_float / price_float * 100):.2f}"
                     except:
-                        percent = '0.00%'
+                        percent = '0.00'
                     
                     indices_data.append({
-                        'name': name,
-                        'symbol': 'usd-krw',
+                        'name': item_data['name'],
+                        'symbol': item_data['symbol'],
                         'price': price,
                         'change': change.replace('+', '').replace('-', ''),
-                        'change_percent': percent.replace('+', '').replace('-', '').replace('%', ''),
+                        'change_percent': percent,
                         'status': status
                     })
-                    logger.info(f"환율 추출 성공: {name}, {price}, {change}, {percent}")
+                    logger.info(f"환율 추출 성공: {item_data['name']}, {price}, {change}, {percent}")
                 
                 except Exception as e:
                     logger.error(f"환율 항목 파싱 오류: {str(e)}")
+            
+            if not any(item['name'] in ['원/달러', '원/엔', '원/위안', '원/유로'] for item in indices_data):
+                logger.warning("환율 데이터를 찾을 수 없습니다")
         
         except Exception as e:
             logger.error(f"환율 크롤링 중 오류: {str(e)}")
         
-        # 4. 원자재 정보 가져오기 (WTI 유가)
+        # 4. 원자재 정보 가져오기 (원유, 금)
         try:
-            # 유가 정보가 있는 부분 찾기
-            oil_item = soup.select_one('#oilGoldList .data_lst li:first-child')
-            if oil_item:
+            # 원자재는 marketindex 페이지의 원/달러 아래에 있는 정보를 활용
+            commodity_items = soup.select('#oilGoldList li') or soup.select('.data_lst.eco_oil li')
+            
+            if commodity_items and len(commodity_items) > 0:
+                # WTI 유가 정보
+                oil_item = commodity_items[0]  # 첫 번째 항목은 보통 WTI
+                
                 try:
                     name = 'WTI'
-                    price_elem = oil_item.select_one('.value')
+                    
+                    # 가격
+                    price_elem = oil_item.select_one('.value') or oil_item.select_one('span.num')
                     price = price_elem.text.strip() if price_elem else '0'
                     
-                    change_elem = oil_item.select_one('.change')
+                    # 변화량
+                    change_elem = oil_item.select_one('.change') or oil_item.select_one('span.num2')
                     change = change_elem.text.strip() if change_elem else '0'
                     
                     # 상태 확인
-                    status_elem = oil_item.select_one('.blind')
-                    if status_elem and '상승' in status_elem.text:
+                    status = 'unchanged'
+                    if oil_item.select_one('.up') or ('class' in oil_item.attrs and 'up' in oil_item['class']):
                         status = 'up'
-                        change = f"+{change}"
-                    elif status_elem and '하락' in status_elem.text:
+                        if not change.startswith('+'):
+                            change = f"+{change}"
+                    elif oil_item.select_one('.down') or ('class' in oil_item.attrs and 'down' in oil_item['class']):
                         status = 'down'
-                        change = f"-{change}"
-                    else:
-                        status = 'unchanged'
+                        if not change.startswith('-'):
+                            change = f"-{change}"
                     
                     # 변화율 계산
                     try:
                         price_float = float(price.replace(',', ''))
-                        change_float = float(change.replace('+', '').replace('-', '').replace(',', ''))
-                        percent = f"{(change_float / price_float * 100):.2f}%"
+                        change_float = float(change.replace(',', '').replace('+', '').replace('-', ''))
+                        percent = f"{(change_float / price_float * 100):.2f}"
                     except:
-                        percent = '0.00%'
+                        percent = '0.00'
                     
                     indices_data.append({
                         'name': name,
                         'symbol': 'wti-oil',
                         'price': price,
                         'change': change.replace('+', '').replace('-', ''),
-                        'change_percent': percent.replace('+', '').replace('-', '').replace('%', ''),
+                        'change_percent': percent,
                         'status': status
                     })
-                    logger.info(f"원자재 추출 성공: {name}, {price}, {change}, {percent}")
+                    logger.info(f"원자재(WTI) 추출 성공: {name}, {price}, {change}, {percent}")
                 
                 except Exception as e:
-                    logger.error(f"원자재 항목 파싱 오류: {str(e)}")
+                    logger.error(f"원자재(WTI) 항목 파싱 오류: {str(e)}")
+                
+                # 금 시세가 있는 경우 (일반적으로 2번째 항목)
+                if len(commodity_items) > 1:
+                    gold_item = commodity_items[1]
+                    
+                    try:
+                        name = '금'
+                        
+                        # 가격
+                        price_elem = gold_item.select_one('.value') or gold_item.select_one('span.num')
+                        price = price_elem.text.strip() if price_elem else '0'
+                        
+                        # 변화량
+                        change_elem = gold_item.select_one('.change') or gold_item.select_one('span.num2')
+                        change = change_elem.text.strip() if change_elem else '0'
+                        
+                        # 상태 확인
+                        status = 'unchanged'
+                        if gold_item.select_one('.up') or ('class' in gold_item.attrs and 'up' in gold_item['class']):
+                            status = 'up'
+                            if not change.startswith('+'):
+                                change = f"+{change}"
+                        elif gold_item.select_one('.down') or ('class' in gold_item.attrs and 'down' in gold_item['class']):
+                            status = 'down'
+                            if not change.startswith('-'):
+                                change = f"-{change}"
+                        
+                        # 변화율 계산
+                        try:
+                            price_float = float(price.replace(',', ''))
+                            change_float = float(change.replace(',', '').replace('+', '').replace('-', ''))
+                            percent = f"{(change_float / price_float * 100):.2f}"
+                        except:
+                            percent = '0.00'
+                        
+                        indices_data.append({
+                            'name': name,
+                            'symbol': 'gold',
+                            'price': price,
+                            'change': change.replace('+', '').replace('-', ''),
+                            'change_percent': percent,
+                            'status': status
+                        })
+                        logger.info(f"원자재(금) 추출 성공: {name}, {price}, {change}, {percent}")
+                    
+                    except Exception as e:
+                        logger.error(f"원자재(금) 항목 파싱 오류: {str(e)}")
+            else:
+                logger.warning("원자재 데이터를 찾을 수 없습니다")
         
         except Exception as e:
             logger.error(f"원자재 크롤링 중 오류: {str(e)}")
