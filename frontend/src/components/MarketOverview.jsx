@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 
 const MarketOverview = () => {
   const [marketData, setMarketData] = useState(null);
@@ -7,7 +7,6 @@ const MarketOverview = () => {
   const [lastFetchTime, setLastFetchTime] = useState(null);
   const [activeTab, setActiveTab] = useState('domestic'); // 'domestic', 'international', 'currency', 'commodity'
   const [selectedItem, setSelectedItem] = useState(null);
-  const chartRef = useRef(null);
 
   // API 호출 함수
   const fetchMarketData = async () => {
@@ -57,6 +56,53 @@ const MarketOverview = () => {
     }
   };
 
+  // 차트 렌더링 함수
+  const renderChartSection = useCallback(() => {
+    return (
+      <div style={{
+        padding: '1rem',
+        paddingBottom: '5rem',
+        backgroundColor: '#f5f5f5',
+        borderRadius: '8px',
+        marginTop: '1rem',
+        marginBottom: '2rem',
+        minHeight: '400px',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center'
+      }}>
+        {selectedItem ? (
+          <div style={{ 
+            textAlign: 'center', 
+            padding: '1rem', 
+            width: '100%',
+            height: '450px',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'flex-start',
+            alignItems: 'center'
+          }}>
+            <h3 style={{ marginBottom: '1rem' }}>{selectedItem.name} 차트</h3>
+            <div id="chart-container" style={{ 
+              width: '100%', 
+              height: '400px', 
+              background: '#fff', 
+              border: '1px solid #eee',
+              borderRadius: '4px',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+            }}>
+              {/* 차트가 여기에 렌더링됩니다 */}
+            </div>
+          </div>
+        ) : (
+          <div style={{ textAlign: 'center', color: '#666', paddingBottom: '2rem' }}>
+            <p>항목을 선택하여 차트를 표시합니다.</p>
+          </div>
+        )}
+      </div>
+    );
+  }, [selectedItem]);
+
   // 컴포넌트 마운트 시 한 번만 실행
   useEffect(() => {
     fetchMarketData();
@@ -67,7 +113,7 @@ const MarketOverview = () => {
     
     return () => clearInterval(intervalId);
   }, []);
-
+  
   // 인라인 스타일 객체
   const styles = {
     container: {
@@ -77,7 +123,39 @@ const MarketOverview = () => {
       padding: '1rem',
       boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
       width: '100%',
-      maxWidth: '100%'
+      maxWidth: '100%',
+      height: 'auto',
+      position: 'relative',
+      display: 'flex',
+      flexDirection: 'column'
+    },
+    header: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: '1rem',
+      paddingBottom: '0.5rem',
+      borderBottom: '1px solid #eee',
+      backgroundColor: '#fff',
+      zIndex: 10
+    },
+    tabs: {
+      display: 'flex',
+      marginBottom: '1rem',
+      borderBottom: '1px solid #eee',
+      backgroundColor: '#fff',
+      zIndex: 9,
+      paddingTop: '0.5rem'
+    },
+    scrollContent: {
+      flexGrow: 1,
+      width: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+      overflowY: 'auto',
+      maxHeight: '700px',
+      scrollbarWidth: 'thin',
+      scrollbarColor: '#3f51b5 #f5f5f5'
     },
     contentContainer: {
       display: 'flex',
@@ -91,14 +169,6 @@ const MarketOverview = () => {
     },
     gridContainer: {
       width: '100%'
-    },
-    header: {
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: '1rem',
-      paddingBottom: '0.5rem',
-      borderBottom: '1px solid #eee'
     },
     title: {
       margin: '0',
@@ -176,7 +246,7 @@ const MarketOverview = () => {
       textOverflow: 'ellipsis'
     },
     itemChangeUp: {
-      color: '#4caf50',
+      color: '#f44336',
       fontSize: '0.85rem',
       display: 'flex',
       alignItems: 'center',
@@ -185,7 +255,7 @@ const MarketOverview = () => {
       textOverflow: 'ellipsis'
     },
     itemChangeDown: {
-      color: '#f44336',
+      color: '#2196f3',
       fontSize: '0.85rem',
       display: 'flex',
       alignItems: 'center',
@@ -200,11 +270,6 @@ const MarketOverview = () => {
       backgroundColor: '#f9f9f9',
       borderRadius: '4px'
     },
-    tabs: {
-      display: 'flex',
-      marginBottom: '1rem',
-      borderBottom: '1px solid #eee'
-    },
     tab: {
       padding: '0.5rem 1rem',
       cursor: 'pointer',
@@ -213,7 +278,7 @@ const MarketOverview = () => {
       transition: 'all 0.2s'
     },
     activeTab: {
-      borderBottom: '2px solid #3f51b5',
+      borderBottom: '2px solid rgb(0, 38, 255)',
       color: '#3f51b5',
       fontWeight: '500'
     },
@@ -240,7 +305,7 @@ const MarketOverview = () => {
       backgroundColor: '#f5f5f5',
       borderRadius: '8px',
       marginTop: '1rem',
-      minHeight: '250px'
+      minHeight: '300px'
     },
     chartTitle: {
       fontSize: '1rem',
@@ -256,7 +321,7 @@ const MarketOverview = () => {
     },
     chartContainer: {
       width: '100%',
-      height: '200px',
+      height: '350px',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center'
@@ -315,8 +380,8 @@ const MarketOverview = () => {
       style={{
         ...styles.item,
         transform: item.status === 'up' ? 'translateY(-2px)' : 'none',
-        boxShadow: item.status === 'up' ? '0 4px 6px rgba(0,128,0,0.1)' : 
-                  item.status === 'down' ? '0 4px 6px rgba(255,0,0,0.1)' : 'none',
+        boxShadow: item.status === 'up' ? '0 4px 6px rgba(244,67,54,0.1)' : 
+                  item.status === 'down' ? '0 4px 6px rgba(33,150,243,0.1)' : 'none',
         ...(selectedItem && selectedItem.name === item.name ? styles.selectedItem : {})
       }}
       onClick={() => setSelectedItem(item)}
@@ -328,30 +393,6 @@ const MarketOverview = () => {
       </div>
     </div>
   );
-
-  // 차트 영역 렌더링 함수
-  const renderChartSection = () => {
-    if (!selectedItem) return null;
-    
-    return (
-      <div style={styles.chartSection}>
-        <div style={styles.chartTitle}>{selectedItem.name} 추이</div>
-        <div style={styles.chartContainer} ref={chartRef}>
-          <div style={{textAlign: 'center'}}>
-            <div style={{fontSize: '1.2rem', fontWeight: 'bold', marginBottom: '10px'}}>{selectedItem.name}</div>
-            <div style={{fontSize: '1.5rem', fontWeight: 'bold'}}>{selectedItem.price}</div>
-            <div style={selectedItem.status === 'up' ? styles.itemChangeUp : styles.itemChangeDown}>
-              {selectedItem.status === 'up' ? '▲' : selectedItem.status === 'down' ? '▼' : '■'} 
-              {selectedItem.change} ({selectedItem.changePercent})
-            </div>
-            <div style={{marginTop: '20px', color: '#666'}}>
-              실시간 차트 데이터 준비 중...
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
 
   // 현재 활성화된 탭에 따라 데이터 표시
   const renderActiveTabContent = () => {
@@ -405,71 +446,90 @@ const MarketOverview = () => {
           )}
         </div>
         {renderChartSection()}
+        <div style={{ height: '50px' }}></div> {/* 추가 빈 공간 */}
       </div>
     );
   };
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <h2 style={styles.title}>시장 개요</h2>
-        <div style={{display: 'flex', alignItems: 'center'}}>
-          {lastFetchTime && <div style={styles.lastUpdated}>마지막 업데이트: {lastFetchTime}</div>}
-          <button 
-            onClick={fetchMarketData} 
-            style={{...styles.refreshButton, marginLeft: '0.5rem'}}
-            disabled={loading}
+    <>
+      <style>
+        {`
+          .market-data-scrollable::-webkit-scrollbar {
+            width: 8px;
+          }
+          .market-data-scrollable::-webkit-scrollbar-track {
+            background: #f5f5f5;
+          }
+          .market-data-scrollable::-webkit-scrollbar-thumb {
+            background-color: #3f51b5;
+            border-radius: 4px;
+          }
+        `}
+      </style>
+      <div style={styles.container}>
+        <div style={styles.header}>
+          <h2 style={styles.title}>시장 개요</h2>
+          <div style={{display: 'flex', alignItems: 'center'}}>
+            {lastFetchTime && <div style={styles.lastUpdated}>마지막 업데이트: {lastFetchTime}</div>}
+            <button 
+              onClick={fetchMarketData} 
+              style={{...styles.refreshButton, marginLeft: '0.5rem'}}
+              disabled={loading}
+            >
+              {loading ? '로딩 중...' : '새로고침'}
+            </button>
+          </div>
+        </div>
+        
+        {/* 탭 네비게이션 */}
+        <div style={styles.tabs}>
+          <div 
+            style={{...styles.tab, ...(activeTab === 'domestic' ? styles.activeTab : styles.inactiveTab)}}
+            onClick={() => {setActiveTab('domestic'); setSelectedItem(null);}}
           >
-            {loading ? '로딩 중...' : '새로고침'}
-          </button>
+            국내 지수
+          </div>
+          <div 
+            style={{...styles.tab, ...(activeTab === 'international' ? styles.activeTab : styles.inactiveTab)}}
+            onClick={() => {setActiveTab('international'); setSelectedItem(null);}}
+          >
+            해외 지수
+          </div>
+          <div 
+            style={{...styles.tab, ...(activeTab === 'currency' ? styles.activeTab : styles.inactiveTab)}}
+            onClick={() => {setActiveTab('currency'); setSelectedItem(null);}}
+          >
+            환율
+          </div>
+          <div 
+            style={{...styles.tab, ...(activeTab === 'commodity' ? styles.activeTab : styles.inactiveTab)}}
+            onClick={() => {setActiveTab('commodity'); setSelectedItem(null);}}
+          >
+            원자재
+          </div>
         </div>
-      </div>
-      
-      {/* 탭 네비게이션 */}
-      <div style={styles.tabs}>
-        <div 
-          style={{...styles.tab, ...(activeTab === 'domestic' ? styles.activeTab : styles.inactiveTab)}}
-          onClick={() => {setActiveTab('domestic'); setSelectedItem(null);}}
-        >
-          국내 지수
-        </div>
-        <div 
-          style={{...styles.tab, ...(activeTab === 'international' ? styles.activeTab : styles.inactiveTab)}}
-          onClick={() => {setActiveTab('international'); setSelectedItem(null);}}
-        >
-          해외 지수
-        </div>
-        <div 
-          style={{...styles.tab, ...(activeTab === 'currency' ? styles.activeTab : styles.inactiveTab)}}
-          onClick={() => {setActiveTab('currency'); setSelectedItem(null);}}
-        >
-          환율
-        </div>
-        <div 
-          style={{...styles.tab, ...(activeTab === 'commodity' ? styles.activeTab : styles.inactiveTab)}}
-          onClick={() => {setActiveTab('commodity'); setSelectedItem(null);}}
-        >
-          원자재
-        </div>
-      </div>
-      
-      {error && <div style={styles.error}>{error}</div>}
-      
-      {loading ? (
-        <div style={styles.loading}>시장 데이터를 불러오는 중...</div>
-      ) : (
-        <div>
-          {marketData ? (
-            renderActiveTabContent()
+        
+        {error && <div style={styles.error}>{error}</div>}
+        
+        <div style={styles.scrollContent} className="market-data-scrollable">
+          {loading ? (
+            <div style={styles.loading}>시장 데이터를 불러오는 중...</div>
           ) : (
-            <div style={styles.noData}>
-              현재 시장 데이터를 불러올 수 없습니다.<br />
-              잠시 후 다시 시도해 주세요.
+            <div>
+              {marketData ? (
+                renderActiveTabContent()
+              ) : (
+                <div style={styles.noData}>
+                  현재 시장 데이터를 불러올 수 없습니다.<br />
+                  잠시 후 다시 시도해 주세요.
+                </div>
+              )}
             </div>
           )}
         </div>
-      )}
-    </div>
+      </div>
+    </>
   );
 };
 
