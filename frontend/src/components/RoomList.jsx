@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { List, ListItem, ListItemButton, ListItemText, ListItemAvatar, Avatar, Divider, Box, Typography, Paper, CircularProgress, Chip, Badge } from '@mui/material';
-import { stockAPI } from '../api/api';
+import { stockAPI } from '../api';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
 import GroupIcon from '@mui/icons-material/Group';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';

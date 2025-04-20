@@ -12,7 +12,7 @@ import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import MonetizationOnIcon from '@mui/icons-material/MonetizationOn';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import VideogameAssetIcon from '@mui/icons-material/VideogameAsset';
-import { chatAPI } from '../api/api';
+import { chatAPI } from '../api';
 import { AuthContext } from '../contexts/AuthContext.context';
 
 // 분리된 컴포넌트 가져오기

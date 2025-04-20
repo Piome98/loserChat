@@ -922,3 +922,136 @@ def crawl_naver_market_indices():
         logger.error(f"네이버 금융 시장 지수 크롤링 중 오류 발생: {str(e)}")
         logger.exception("상세 오류 스택:")
         return []
+
+def crawl_korean_index_daily_prices(index_code):
+    """
+    네이버 금융에서 국내 지수(KOSPI, KOSDAQ) 일별 시세 데이터를 크롤링합니다.
+    
+    Args:
+        index_code (str): 'KOSPI' 또는 'KOSDAQ'과 같은 지수 코드
+        
+    Returns:
+        list: 일별 시세 데이터 목록 (날짜, 종가, 전일비, 등락률, 거래량)
+    """
+    logger.info(f"국내 지수 {index_code} 일별 시세 크롤링 시작")
+    
+    url = f'https://finance.naver.com/sise/sise_index_day.naver?code={index_code}'
+    
+    try:
+        # 다양한 User-Agent 설정
+        user_agents = [
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/113.0',
+        ]
+        
+        # 헤더 설정
+        headers = {
+            'User-Agent': random.choice(user_agents),
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+        }
+        
+        # 1페이지부터 시작해서 최근 90일 정도의 데이터를 가져옵니다
+        all_data = []
+        page = 1
+        max_pages = 10  # 90일 정도의 데이터를 위해 약 10페이지
+        
+        while page <= max_pages:
+            page_url = f'{url}&page={page}'
+            logger.info(f"페이지 {page} 크롤링: {page_url}")
+            
+            # 요청 사이에 약간의 지연 추가
+            if page > 1:
+                time.sleep(random.uniform(0.5, 1.5))
+                
+            response = requests.get(page_url, headers=headers, timeout=10)
+            response.raise_for_status()
+            response.encoding = 'euc-kr'  # 네이버는 euc-kr 인코딩 사용
+            
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # 테이블 가져오기
+            table = soup.select('table.type_1 tr')
+            
+            # 이 페이지에서 데이터를 찾았는지 확인하는 플래그
+            found_data_in_page = False
+            
+            for row in table:
+                # 날짜 셀이 있는지 확인
+                date_cell = row.select_one('td.date')
+                if not date_cell:
+                    continue
+                
+                # 숫자 셀들 (종가, 전일비, 등락률, 거래량)
+                cells = row.select('td.number')
+                if len(cells) < 4:  # 최소 4개의 셀이 필요
+                    continue
+                
+                # 날짜와 데이터 추출
+                date_str = date_cell.text.strip()
+                if not date_str:
+                    continue
+                
+                found_data_in_page = True
+                
+                # 종가, 전일비, 등락률, 거래량
+                close_price = cells[0].text.strip().replace(',', '')
+                change = cells[1].text.strip().replace(',', '')
+                change_percent = cells[2].text.strip().replace('%', '')
+                
+                # 등락 방향 확인
+                is_increase = False
+                is_decrease = False
+                
+                img_tag = cells[1].select_one('img')
+                if img_tag:
+                    img_src = img_tag.get('src', '')
+                    if 'up' in img_src:
+                        is_increase = True
+                    elif 'down' in img_src:
+                        is_decrease = True
+                
+                # 등락률에 부호 추가
+                if is_increase and not change_percent.startswith('+'):
+                    change_percent = f"+{change_percent}"
+                elif is_decrease and not change_percent.startswith('-'):
+                    change_percent = f"-{change_percent}"
+                
+                # 거래량
+                volume = cells[3].text.strip().replace(',', '')
+                
+                # 날짜 형식 변환 (YYYY.MM.DD -> YYYY-MM-DD)
+                date_parts = date_str.split('.')
+                if len(date_parts) == 3:
+                    formatted_date = f"{date_parts[0]}-{date_parts[1].zfill(2)}-{date_parts[2].zfill(2)}"
+                else:
+                    formatted_date = date_str
+                
+                # 데이터 저장
+                data_item = {
+                    'date': formatted_date,
+                    'close': close_price,
+                    'change': change,
+                    'change_percent': change_percent,
+                    'volume': volume,
+                    'is_increase': is_increase,
+                    'is_decrease': is_decrease
+                }
+                
+                all_data.append(data_item)
+            
+            # 이 페이지에서 데이터를 찾지 못했다면 마지막 페이지일 수 있음
+            if not found_data_in_page:
+                logger.info(f"페이지 {page}에서 데이터를 찾지 못했습니다. 크롤링 종료.")
+                break
+                
+            page += 1
+        
+        logger.info(f"국내 지수 {index_code} 일별 시세 크롤링 완료: {len(all_data)}개 데이터")
+        return all_data
+        
+    except Exception as e:
+        logger.error(f"국내 지수 {index_code} 일별 시세 크롤링 오류: {str(e)}")
+        logger.exception("상세 오류:")
+        return []

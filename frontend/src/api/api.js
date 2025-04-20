@@ -1,7 +1,10 @@
 import axios from 'axios';
 
 // API 기본 설정
-const API_BASE_URL = 'http://localhost:8000/api';
+// const API_BASE_URL = 'http://localhost:8000/api';
+const API_BASE_URL = import.meta.env?.VITE_API_URL || 'http://localhost:8000/api';
+
+console.log('API URL:', API_BASE_URL); // 디버깅용 로그
 
 // Axios 인스턴스 생성
 const api = axios.create({
@@ -10,6 +13,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true, // CORS 요청 시 쿠키 전송 허용
 });
 
 // 요청 인터셉터 - 모든 요청에 토큰 추가
@@ -33,11 +37,11 @@ api.interceptors.response.use(
   },
   async (error) => {
     // 서버에 연결할 수 없는 경우
-    if (error.code === 'ERR_NETWORK' || error.message === 'Network Error') {
+    if (!error.response || error.code === 'ERR_NETWORK' || error.message === 'Network Error') {
       console.error('서버에 연결할 수 없습니다. 로컬 더미 데이터를 사용합니다.');
       
       // API 엔드포인트에 따라 더미 데이터 반환
-      const url = error.config.url;
+      const url = error.config?.url || '';
       
       // 뉴스 API인 경우
       if (url.includes('crawling/naver-finance-news')) {
@@ -50,6 +54,28 @@ api.interceptors.response.use(
       if (url.includes('crawling/naver-finance-market')) {
         return Promise.resolve({
           data: generateDummyMarketData()
+        });
+      }
+      
+      // 토큰 새로고침 API인 경우
+      if (url.includes('accounts/token/refresh')) {
+        console.warn('토큰 갱신 요청이 실패했습니다. 더미 데이터를 사용할 수 없습니다.');
+        return Promise.reject({
+          response: { 
+            status: 503, 
+            data: { detail: '서버에 연결할 수 없어 인증을 갱신할 수 없습니다.' } 
+          }
+        });
+      }
+      
+      // 로그인 API인 경우
+      if (url.includes('accounts/login')) {
+        console.warn('로그인 요청이 실패했습니다. 서버에 연결할 수 없습니다.');
+        return Promise.reject({
+          response: { 
+            status: 503, 
+            data: { detail: '서버에 연결할 수 없어 로그인할 수 없습니다.' } 
+          }
         });
       }
     }

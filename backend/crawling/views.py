@@ -14,6 +14,7 @@ import random
 import time
 import json
 import re
+from rest_framework import status
 
 logger = logging.getLogger(__name__)
 
@@ -251,3 +252,53 @@ def naver_finance_market(request):
         }
         
         return JsonResponse(empty_data)
+
+@api_view(['GET'])
+def korean_index_daily_prices_view(request):
+    """국내 주요 지수(KOSPI, KOSDAQ)의 일별 시세 데이터를 가져옵니다."""
+    try:
+        # 요청 파라미터에서 지수 코드 가져오기
+        index_symbol = request.GET.get('symbol', '').upper()
+        
+        # 지수 코드 매핑
+        index_code_map = {
+            'KOSPI': 'KOSPI',   # 코스피
+            'KS11': 'KOSPI',    # 코스피 (야후 파이낸스 코드)
+            'KOSDAQ': 'KOSDAQ', # 코스닥
+            'KQ11': 'KOSDAQ',   # 코스닥 (야후 파이낸스 코드)
+        }
+        
+        # 코드 변환
+        index_code = index_code_map.get(index_symbol)
+        
+        if not index_code:
+            return Response(
+                {"error": f"지원하지 않는 지수 심볼입니다: {index_symbol}. 지원되는 심볼: KOSPI, KS11, KOSDAQ, KQ11"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # 일별 시세 크롤링
+        daily_prices = utils.crawl_korean_index_daily_prices(index_code)
+        
+        if not daily_prices:
+            return Response(
+                {"error": f"{index_symbol} 일별 시세 데이터를 가져오지 못했습니다."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # 응답 데이터 구성
+        response_data = {
+            "symbol": index_symbol,
+            "name": f"{index_code} 지수",
+            "data": daily_prices
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"국내 지수 일별 시세 조회 오류: {str(e)}")
+        logger.exception("상세 오류:")
+        return Response(
+            {"error": "일별 시세 데이터를 처리하는 중 오류가 발생했습니다."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )

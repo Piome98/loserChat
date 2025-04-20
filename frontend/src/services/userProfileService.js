@@ -1,4 +1,4 @@
-import { userAPI } from '../api/api';
+import { userAPI } from '../api';
 
 // 사용자 프로필 관련 서비스 함수
 export const viewOwnProfile = async (userId) => {

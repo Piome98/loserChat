@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Paper, Typography, Box, Chip, Divider, CircularProgress, Button } from '@mui/material';
-import { stockAPI } from '../api/api';
+import { stockAPI } from '../api';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import { useAuth } from '../contexts/AuthContext';
