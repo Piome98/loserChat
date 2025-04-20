@@ -1,5 +1,30 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import TradingViewWidget from './ChartOutput';
+import ChartOutput from './ChartOutput';
+
+// 시장 항목을 API 코드로 매핑하는 객체
+const marketNameToCodeMap = {
+  // 국내 지수
+  '코스피': 'KOSPI',
+  '코스닥': 'KOSDAQ',
+  '코스피 200': 'KPI200',
+  
+  // 해외 지수
+  '다우': 'DJI',
+  '다우존스': 'DJI',
+  '나스닥': 'NASDAQ',
+  'S&P 500': 'SP500',
+  'S&P': 'SP500',
+  
+  // 원자재
+  'WTI': 'WTI',
+  '금': 'GOLD',
+  '은': 'SILVER',
+  
+  // 환율
+  '달러/원': 'USD/KRW',
+  '엔/원': 'JPY/KRW',
+  '유로/원': 'EUR/KRW'
+};
 
 const MarketOverview = () => {
   const [marketData, setMarketData] = useState(null);
@@ -8,6 +33,7 @@ const MarketOverview = () => {
   const [lastFetchTime, setLastFetchTime] = useState(null);
   const [activeTab, setActiveTab] = useState('domestic'); // 'domestic', 'international', 'currency', 'commodity'
   const [selectedItem, setSelectedItem] = useState(null);
+  const [selectedCode, setSelectedCode] = useState('KOSPI'); // 기본값은 코스피
 
   // API 호출 함수
   const fetchMarketData = async () => {
@@ -57,6 +83,53 @@ const MarketOverview = () => {
     }
   };
 
+  // 항목을 선택했을 때 호출되는 함수
+  const handleItemSelect = (item) => {
+    setSelectedItem(item);
+    
+    // 항목 이름에서 코드 추출
+    const name = item.name.replace('...', ''); // 말줄임표 제거
+    
+    // 이름으로 코드 매핑
+    let code = 'KOSPI'; // 기본값
+    
+    // 정확한 매핑 시도
+    for (const [itemName, itemCode] of Object.entries(marketNameToCodeMap)) {
+      if (name.includes(itemName)) {
+        code = itemCode;
+        break;
+      }
+    }
+    
+    // 유사 매핑 시도 (정확한 매칭이 없을 경우)
+    if (code === 'KOSPI' && name !== '코스피') {
+      if (name.toLowerCase().includes('kosdaq') || name.includes('코스닥')) {
+        code = 'KOSDAQ';
+      } else if (name.toLowerCase().includes('dow') || name.includes('다우')) {
+        code = 'DJI';
+      } else if (name.toLowerCase().includes('nasdaq') || name.includes('나스닥')) {
+        code = 'NASDAQ';
+      } else if (name.toLowerCase().includes('s&p') || name.includes('S&P')) {
+        code = 'SP500';
+      } else if (name.toLowerCase().includes('wti') || name.includes('원유')) {
+        code = 'WTI';
+      } else if (name.toLowerCase().includes('gold') || name.includes('금')) {
+        code = 'GOLD';
+      } else if (name.toLowerCase().includes('silver') || name.includes('은')) {
+        code = 'SILVER';
+      } else if (name.toLowerCase().includes('usd') || name.includes('달러')) {
+        code = 'USD/KRW';
+      } else if (name.toLowerCase().includes('jpy') || name.includes('엔')) {
+        code = 'JPY/KRW';
+      } else if (name.toLowerCase().includes('eur') || name.includes('유로')) {
+        code = 'EUR/KRW';
+      }
+    }
+    
+    console.log(`선택된 항목: ${name}, 코드: ${code}`);
+    setSelectedCode(code);
+  };
+
   // 차트 렌더링 함수
   const renderChartSection = useCallback(() => {
     return (
@@ -74,7 +147,12 @@ const MarketOverview = () => {
         minHeight: '300px'
       }}>
         {selectedItem ? (
-          <TradingViewWidget item={selectedItem} />
+          <div style={{ width: '100%' }}>
+            <h3 style={{ textAlign: 'center', marginBottom: '1rem' }}>
+              {selectedItem.name} 차트
+            </h3>
+            <ChartOutput selectedIndex={selectedCode} />
+          </div>
         ) : (
           <div style={{ textAlign: 'center', color: '#666', paddingBottom: '2rem', paddingTop: '2rem', width: '100%', minHeight: '250px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <p>항목을 선택하여 차트를 표시합니다.</p>
@@ -82,7 +160,7 @@ const MarketOverview = () => {
         )}
       </div>
     );
-  }, [selectedItem]);
+  }, [selectedItem, selectedCode]);
 
   // 컴포넌트 마운트 시 한 번만 실행
   useEffect(() => {
@@ -94,7 +172,7 @@ const MarketOverview = () => {
     
     return () => clearInterval(intervalId);
   }, []);
-  
+
   // 인라인 스타일 객체
   const styles = {
     container: {
@@ -365,7 +443,7 @@ const MarketOverview = () => {
                   item.status === 'down' ? '0 4px 6px rgba(33,150,243,0.1)' : 'none',
         ...(selectedItem && selectedItem.name === item.name ? styles.selectedItem : {})
       }}
-      onClick={() => setSelectedItem(item)}
+      onClick={() => handleItemSelect(item)}
     >
       <div style={styles.itemName}>{item.name}</div>
       <div style={styles.itemPrice}>{item.price}</div>
@@ -448,67 +526,67 @@ const MarketOverview = () => {
           }
         `}
       </style>
-      <div style={styles.container}>
-        <div style={styles.header}>
-          <h2 style={styles.title}>시장 개요</h2>
-          <div style={{display: 'flex', alignItems: 'center'}}>
-            {lastFetchTime && <div style={styles.lastUpdated}>마지막 업데이트: {lastFetchTime}</div>}
-            <button 
-              onClick={fetchMarketData} 
-              style={{...styles.refreshButton, marginLeft: '0.5rem'}}
-              disabled={loading}
-            >
-              {loading ? '로딩 중...' : '새로고침'}
-            </button>
-          </div>
+    <div style={styles.container}>
+      <div style={styles.header}>
+        <h2 style={styles.title}>시장 개요</h2>
+        <div style={{display: 'flex', alignItems: 'center'}}>
+          {lastFetchTime && <div style={styles.lastUpdated}>마지막 업데이트: {lastFetchTime}</div>}
+          <button 
+            onClick={fetchMarketData} 
+            style={{...styles.refreshButton, marginLeft: '0.5rem'}}
+            disabled={loading}
+          >
+            {loading ? '로딩 중...' : '새로고침'}
+          </button>
         </div>
-        
-        {/* 탭 네비게이션 */}
-        <div style={styles.tabs}>
-          <div 
-            style={{...styles.tab, ...(activeTab === 'domestic' ? styles.activeTab : styles.inactiveTab)}}
+      </div>
+      
+      {/* 탭 네비게이션 */}
+      <div style={styles.tabs}>
+        <div 
+          style={{...styles.tab, ...(activeTab === 'domestic' ? styles.activeTab : styles.inactiveTab)}}
             onClick={() => {setActiveTab('domestic'); setSelectedItem(null);}}
-          >
-            국내 지수
-          </div>
-          <div 
-            style={{...styles.tab, ...(activeTab === 'international' ? styles.activeTab : styles.inactiveTab)}}
-            onClick={() => {setActiveTab('international'); setSelectedItem(null);}}
-          >
-            해외 지수
-          </div>
-          <div 
-            style={{...styles.tab, ...(activeTab === 'currency' ? styles.activeTab : styles.inactiveTab)}}
-            onClick={() => {setActiveTab('currency'); setSelectedItem(null);}}
-          >
-            환율
-          </div>
-          <div 
-            style={{...styles.tab, ...(activeTab === 'commodity' ? styles.activeTab : styles.inactiveTab)}}
-            onClick={() => {setActiveTab('commodity'); setSelectedItem(null);}}
-          >
-            원자재
-          </div>
+        >
+          국내 지수
         </div>
-        
-        {error && <div style={styles.error}>{error}</div>}
-        
+        <div 
+          style={{...styles.tab, ...(activeTab === 'international' ? styles.activeTab : styles.inactiveTab)}}
+            onClick={() => {setActiveTab('international'); setSelectedItem(null);}}
+        >
+          해외 지수
+        </div>
+        <div 
+          style={{...styles.tab, ...(activeTab === 'currency' ? styles.activeTab : styles.inactiveTab)}}
+            onClick={() => {setActiveTab('currency'); setSelectedItem(null);}}
+        >
+          환율
+        </div>
+        <div 
+          style={{...styles.tab, ...(activeTab === 'commodity' ? styles.activeTab : styles.inactiveTab)}}
+            onClick={() => {setActiveTab('commodity'); setSelectedItem(null);}}
+        >
+          원자재
+        </div>
+      </div>
+      
+      {error && <div style={styles.error}>{error}</div>}
+      
         <div style={styles.scrollContent} className="market-data-scrollable">
-          {loading ? (
-            <div style={styles.loading}>시장 데이터를 불러오는 중...</div>
+      {loading ? (
+        <div style={styles.loading}>시장 데이터를 불러오는 중...</div>
+      ) : (
+        <div>
+          {marketData ? (
+            renderActiveTabContent()
           ) : (
-            <div>
-              {marketData ? (
-                renderActiveTabContent()
-              ) : (
-                <div style={styles.noData}>
-                  현재 시장 데이터를 불러올 수 없습니다.<br />
-                  잠시 후 다시 시도해 주세요.
-                </div>
-              )}
+            <div style={styles.noData}>
+              현재 시장 데이터를 불러올 수 없습니다.<br />
+              잠시 후 다시 시도해 주세요.
             </div>
           )}
         </div>
+      )}
+    </div>
       </div>
     </>
   );
