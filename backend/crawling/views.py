@@ -14,7 +14,28 @@ import random
 import time
 import json
 import re
-from rest_framework import status
+import pandas as pd
+from datetime import datetime, timedelta
+
+# index_crawler에서 필요한 함수 임포트
+try:
+    from .index_crawler import crawl_index_daily_price, YAHOO_GLOBAL_INDEX_CODE_MAP, crawl_global_index_data, NAVER_GLOBAL_INDEX_SYMBOLS, crawl_naver_global_index, get_index_name, crawl_commodity_data, crawl_currency_data
+except ImportError:
+    # 개발 환경에서 임시 Mock 함수 구현
+    def crawl_index_daily_price(index_code='KOSPI', pages=1):
+        return pd.DataFrame()
+    YAHOO_GLOBAL_INDEX_CODE_MAP = {}
+    NAVER_GLOBAL_INDEX_SYMBOLS = {}
+    def crawl_global_index_data(index_code, days=30):
+        return pd.DataFrame()
+    def crawl_naver_global_index(index_code, days=30):
+        return pd.DataFrame()
+    def get_index_name(code):
+        return code
+    def crawl_commodity_data(code, days=30):
+        return None
+    def crawl_currency_data(code, days=30):
+        return None
 
 logger = logging.getLogger(__name__)
 
@@ -232,7 +253,6 @@ def naver_finance_market(request):
         if indices_data:
             logger.info(f"시장 데이터 캐싱 (항목 수: {len(indices_data)})")
             logger.info(f"환율 항목 수: {len(market_data['currencies'])}")
-            logger.info(f"원자재 항목 수: {len(market_data['commodities'])}")
             logger.info(f"지수 항목 수: {len(market_data['indices'])}")
             cache.set(cache_key, market_data, 300)
         
@@ -248,57 +268,144 @@ def naver_finance_market(request):
             'updateTime': timezone.now().strftime('%Y-%m-%d %H:%M:%S'),
             'indices': [],
             'currencies': [],
-            'commodities': []
+
         }
         
         return JsonResponse(empty_data)
 
 @api_view(['GET'])
-def korean_index_daily_prices_view(request):
-    """국내 주요 지수(KOSPI, KOSDAQ)의 일별 시세 데이터를 가져옵니다."""
+def get_daily_index_data(request):
+    """
+    지수/원자재/환율 일별 시세 데이터를 제공하는 API 엔드포인트
+    
+    파라미터:
+    - code: 코드 (필수, 예: KOSPI, KOSDAQ, WTI, USD/KRW 등)
+    - days: 가져올 일 수 (선택, 기본값: 30)
+    - page: 페이지 번호 (선택, 기본값: 1)
+    """
     try:
-        # 요청 파라미터에서 지수 코드 가져오기
-        index_symbol = request.GET.get('symbol', '').upper()
+        # 파라미터 가져오기
+        code = request.GET.get('code')
+        days = int(request.GET.get('days', 30))
+        page = int(request.GET.get('page', 1))
         
-        # 지수 코드 매핑
-        index_code_map = {
-            'KOSPI': 'KOSPI',   # 코스피
-            'KS11': 'KOSPI',    # 코스피 (야후 파이낸스 코드)
-            'KOSDAQ': 'KOSDAQ', # 코스닥
-            'KQ11': 'KOSDAQ',   # 코스닥 (야후 파이낸스 코드)
-        }
+        # 코드가 없으면 에러
+        if not code:
+            return Response({
+                'error': '코드(code) 파라미터가 필요합니다.'
+            }, status=400)
         
-        # 코드 변환
-        index_code = index_code_map.get(index_symbol)
+        # 캐싱 키 생성
+        cache_key = f'daily_index_{code}_{days}_page{page}'
+        cached_data = cache.get(cache_key)
         
-        if not index_code:
-            return Response(
-                {"error": f"지원하지 않는 지수 심볼입니다: {index_symbol}. 지원되는 심볼: KOSPI, KS11, KOSDAQ, KQ11"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # 캐시된 데이터가 있으면 반환
+        if cached_data:
+            logger.info(f"캐시된 {code} 데이터 사용")
+            return Response(cached_data)
+            
+        # 일별 지수 데이터 크롤링
+        logger.info(f"{code} 일별 시세 데이터 크롤링 시작")
         
-        # 일별 시세 크롤링
-        daily_prices = utils.crawl_korean_index_daily_prices(index_code)
+        # 코드 종류에 따라 처리
+        data = None
         
-        if not daily_prices:
-            return Response(
-                {"error": f"{index_symbol} 일별 시세 데이터를 가져오지 못했습니다."},
-                status=status.HTTP_404_NOT_FOUND
-            )
+        # 지원되는 코드 목록
+        supported_indices = ['KOSPI', 'KOSDAQ', 'KPI200', 'DJI', 'NASDAQ', 'SP500', 'HSI']
+        supported_commodities = ['WTI', 'GOLD', 'SILVER']
+        supported_currencies = ['USD/KRW', 'JPY/KRW', 'EUR/KRW', 'CNY/KRW']
         
-        # 응답 데이터 구성
-        response_data = {
-            "symbol": index_symbol,
-            "name": f"{index_code} 지수",
-            "data": daily_prices
-        }
+        # 국내 지수 또는 해외 지수인 경우
+        if code in supported_indices:
+            try:
+                # 국내 지수: 일별 시세 크롤링 (네이버 금융)
+                if code in ['KOSPI', 'KOSDAQ', 'KPI200']:
+                    # 최대 페이지 수는 days 기반으로 계산
+                    pages_to_crawl = min(5, (days + 9) // 10)  # 대략 한 페이지당 10일치 데이터라고 가정
+                    df = crawl_index_daily_price(index_code=code, pages=pages_to_crawl)
+                # 해외 지수: 네이버 금융 우선, 야후 파이낸스 대체
+                else:
+                    # 네이버 금융에서 데이터 가져오기 시도
+                    if code in NAVER_GLOBAL_INDEX_SYMBOLS:
+                        df = crawl_naver_global_index(code, days=days)
+                    
+                    # 네이버 금융에서 데이터를 가져오지 못했거나 지원하지 않는 코드인 경우 야후 파이낸스 시도
+                    if df is None or df.empty:
+                        if code in YAHOO_GLOBAL_INDEX_CODE_MAP:
+                            df = crawl_global_index_data(code, days=days)
+                        else:
+                            logger.error(f"지원되지 않는 지수 코드: {code}")
+                            return Response({
+                                'error': f"지원되지 않는 지수 코드입니다: {code}"
+                            }, status=400)
+                
+                if not df.empty:
+                    # 날짜 형식 변환
+                    df['date'] = df['date'].dt.strftime('%Y-%m-%d')
+                    
+                    # 데이터 포맷팅
+                    data = {
+                        'code': code,
+                        'name': get_index_name(code),
+                        'data': df.to_dict('records'),
+                        'total_count': len(df),
+                        'update_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    }
+            except Exception as e:
+                logger.error(f"{code} 데이터 크롤링 오류: {str(e)}")
         
-        return Response(response_data, status=status.HTTP_200_OK)
+        
+        # 환율의 경우
+        elif code in supported_currencies:
+            data = crawl_currency_data(code, days)
+            
+        else:
+            # 지원되지 않는 코드인 경우
+            return Response({
+                'error': f"지원되지 않는 코드입니다: {code}",
+                'supported_codes': {
+                    'indices': supported_indices,
+                    'commodities': supported_commodities,
+                    'currencies': supported_currencies
+                }
+            }, status=400)
+        
+        # 데이터가 없으면 에러
+        if not data:
+            return Response({
+                'error': f"{code} 데이터를 가져오는 중 오류가 발생했습니다."
+            }, status=500)
+        
+        # 결과 캐싱 (1시간)
+        cache.set(cache_key, data, 3600)
+        
+        return Response(data)
         
     except Exception as e:
-        logger.error(f"국내 지수 일별 시세 조회 오류: {str(e)}")
-        logger.exception("상세 오류:")
-        return Response(
-            {"error": "일별 시세 데이터를 처리하는 중 오류가 발생했습니다."},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+        logger.error(f"일별 시세 데이터 요청 처리 오류: {str(e)}")
+        return Response({
+            'error': '데이터를 가져오는 중 오류가 발생했습니다.',
+            'details': str(e)
+        }, status=500)
+
+@api_view(['GET'])
+def get_supported_indices(request):
+    """지원되는 지수, 원자재, 환율 코드 목록을 반환"""
+    return Response({
+        'indices': [
+            {'code': 'KOSPI', 'name': '코스피'},
+            {'code': 'KOSDAQ', 'name': '코스닥'},
+            {'code': 'KPI200', 'name': '코스피 200'},
+            {'code': 'DJI', 'name': '다우존스 산업평균지수'},
+            {'code': 'NASDAQ', 'name': '나스닥 종합지수'},
+            {'code': 'SP500', 'name': 'S&P 500'},
+            {'code': 'HSI', 'name': '항셍지수'}
+        ],
+     
+        'currencies': [
+            {'code': 'USD/KRW', 'name': '원/달러'},
+            {'code': 'JPY/KRW', 'name': '원/엔'},
+            {'code': 'EUR/KRW', 'name': '원/유로'},
+            {'code': 'CNY/KRW', 'name': '원/위안'}
+        ]
+    })

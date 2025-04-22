@@ -152,7 +152,6 @@ def view_user_profile(request, user_id):
                 'username': target_user.username,
                 'nickname': target_user.nickname,
                 'bonus_points': target_user.bonus_points,
-                'game_wins': target_user.game_wins,
                 'loser_badge_count': target_user.loser_badge_count,
                 'champion_badge_count': target_user.champion_badge_count,
                 'stocks': stock_data
@@ -188,7 +187,6 @@ def view_user_profile(request, user_id):
             'username': target_user.username,
             'nickname': target_user.nickname,
             'bonus_points': target_user.bonus_points,
-            'game_wins': target_user.game_wins,
             'loser_badge_count': target_user.loser_badge_count,
             'champion_badge_count': target_user.champion_badge_count,
             'stocks': stock_data

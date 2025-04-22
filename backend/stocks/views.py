@@ -62,60 +62,61 @@ class StockViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(stock)
         return Response(serializer.data)
     
-    def _handle_loser_stock(self, stock):
-        """루저 종목 처리 (멤버 퇴출 및 루저 배지 부여)"""
-        # 해당 종목 토론방이 있는지 확인
+    def _process_room_members(self, stock, is_champion=False, is_loser=False):
+        """종목 토론방 멤버 처리 공통 메서드"""
         try:
             room = stock.room
         except StockRoom.DoesNotExist:
             return
         
-        # 종목 비활성화
-        stock.is_active = False
-        stock.save()
+        # 루저 종목인 경우 종목 비활성화
+        if is_loser:
+            stock.is_active = False
+            stock.save()
         
-        # 모든 멤버를 퇴출하고 루저 배지 부여
+        # 멤버십 필터링 (루저는 모든 멤버, 챔피언은 활성 멤버만)
         memberships = StockRoomMembership.objects.filter(stock_room=room, is_kicked=False)
+        
         for membership in memberships:
-            # 유저 퇴출
-            membership.kick_user()
-            
-            # 루저 배지 부여
             user = membership.user
-            user.loser_badge_count += 1
-            user.is_in_loser_room = True
+            
+            if is_loser:
+                # 유저 퇴출
+                membership.kick_user()
+                
+                # 루저 배지 부여
+                user.loser_badge_count += 1
+                user.is_in_loser_room = True
+                
+                # 메시지 내용
+                message_content = f"{user.username}님이 패잔병 토론방에 입장했습니다."
+                room_type = 'loser'
+            elif is_champion:
+                # 챔피언 배지 부여
+                user.champion_badge_count += 1
+                user.bonus_points += 50  # 챔피언 보너스 포인트 지급
+                
+                # 메시지 내용
+                message_content = f"축하합니다! {user.username}님이 {stock.name} 종목의 챔피언이 되었습니다! (+50 포인트)"
+                room_type = 'stock'
+            
             user.save()
             
-            # 패잔병 토론방에 환영 메시지 추가
+            # 메시지 생성
             Message.objects.create(
                 user=user,
                 stock_room=room,
-                room_type='loser',
-                content=f"{user.username}님이 패잔병 토론방에 입장했습니다."
+                room_type=room_type,
+                content=message_content
             )
+    
+    def _handle_loser_stock(self, stock):
+        """루저 종목 처리 (멤버 퇴출 및 루저 배지 부여)"""
+        self._process_room_members(stock, is_loser=True)
     
     def _handle_champion_stock(self, stock):
         """챔피언 종목 처리 (챔피언 배지 부여)"""
-        try:
-            room = stock.room
-        except StockRoom.DoesNotExist:
-            return
-        
-        # 모든 활성 멤버에게 챔피언 배지 부여
-        memberships = StockRoomMembership.objects.filter(stock_room=room, is_kicked=False)
-        for membership in memberships:
-            user = membership.user
-            user.champion_badge_count += 1
-            user.bonus_points += 50  # 챔피언 보너스 포인트 지급
-            user.save()
-            
-            # 축하 메시지 생성
-            Message.objects.create(
-                user=user,
-                stock_room=room,
-                room_type='stock',
-                content=f"축하합니다! {user.username}님이 {stock.name} 종목의 챔피언이 되었습니다! (+50 포인트)"
-            )
+        self._process_room_members(stock, is_champion=True)
 
 
 class StockRoomViewSet(viewsets.ModelViewSet):

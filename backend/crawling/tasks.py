@@ -40,54 +40,55 @@ class CrawlingScheduler:
             self._thread = None
         logger.info("크롤링 스케줄러 중지됨")
     
+    def _run_task(self, task_func, task_name, last_crawl_time, interval):
+        """개별 크롤링 작업 실행 메서드"""
+        now = timezone.now()
+        
+        if last_crawl_time is None or (now - last_crawl_time).total_seconds() >= interval:
+            try:
+                logger.info(f"{task_name} 크롤링 시작")
+                task_func()
+                logger.info(f"{task_name} 크롤링 완료")
+                return now  # 마지막 실행 시간 업데이트
+            except Exception as e:
+                logger.error(f"{task_name} 크롤링 실패: {str(e)}")
+        
+        return last_crawl_time  # 실행하지 않았으면 기존 시간 유지
+    
     def _run(self):
         """스케줄러 실행 루프"""
         while self._running:
-            now = timezone.now()
+            # 인베스팅닷컴 뉴스 크롤링
+            self.last_news_crawl = self._run_task(
+                crawl_news_from_investing,
+                "인베스팅닷컴 뉴스",
+                self.last_news_crawl,
+                self.news_interval
+            )
             
-            # 뉴스 크롤링 체크
-            if (self.last_news_crawl is None or 
-                (now - self.last_news_crawl).total_seconds() >= self.news_interval):
-                try:
-                    logger.info("뉴스 크롤링 시작")
-                    crawl_news_from_investing()
-                    self.last_news_crawl = now
-                    logger.info("뉴스 크롤링 완료")
-                except Exception as e:
-                    logger.error(f"뉴스 크롤링 실패: {str(e)}")
+            # 인베스팅닷컴 시장 지수 크롤링
+            self.last_market_crawl = self._run_task(
+                crawl_market_indices,
+                "인베스팅닷컴 시장 지수",
+                self.last_market_crawl,
+                self.market_interval
+            )
             
-            # 시장 지수 크롤링 체크
-            if (self.last_market_crawl is None or 
-                (now - self.last_market_crawl).total_seconds() >= self.market_interval):
-                try:
-                    logger.info("시장 지수 크롤링 시작")
-                    crawl_market_indices()
-                    self.last_market_crawl = now
-                    logger.info("시장 지수 크롤링 완료")
-                except Exception as e:
-                    logger.error(f"시장 지수 크롤링 실패: {str(e)}")
+            # 네이버 금융 뉴스 크롤링
+            self.last_naver_news_crawl = self._run_task(
+                crawl_naver_finance_news,
+                "네이버 금융 뉴스",
+                self.last_naver_news_crawl,
+                self.naver_news_interval
+            )
             
-            # 네이버 금융 뉴스 크롤링 체크
-            if (self.last_naver_news_crawl is None or 
-                (now - self.last_naver_news_crawl).total_seconds() >= self.naver_news_interval):
-                try:
-                    logger.info("네이버 금융 뉴스 크롤링 시작")
-                    crawl_naver_finance_news()
-                    self.last_naver_news_crawl = now
-                    logger.info("네이버 금융 뉴스 크롤링 완료")
-                except Exception as e:
-                    logger.error(f"네이버 금융 뉴스 크롤링 실패: {str(e)}")
-            
-            # 네이버 금융 시장 지수 크롤링 체크
-            if (self.last_naver_market_crawl is None or 
-                (now - self.last_naver_market_crawl).total_seconds() >= self.naver_market_interval):
-                try:
-                    logger.info("네이버 금융 시장 지수 크롤링 시작")
-                    crawl_naver_market_indices()
-                    self.last_naver_market_crawl = now
-                    logger.info("네이버 금융 시장 지수 크롤링 완료")
-                except Exception as e:
-                    logger.error(f"네이버 금융 시장 지수 크롤링 실패: {str(e)}")
+            # 네이버 금융 시장 지수 크롤링
+            self.last_naver_market_crawl = self._run_task(
+                crawl_naver_market_indices,
+                "네이버 금융 시장 지수",
+                self.last_naver_market_crawl,
+                self.naver_market_interval
+            )
             
             # 1초 동안 대기
             time.sleep(1)

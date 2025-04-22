@@ -7,33 +7,37 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
 
-choices = ['rock', 'paper', 'scissors']
-beats = {
+# 게임 상수 정의
+CHOICES = ['rock', 'paper', 'scissors']
+BEATS = {
     'rock': 'scissors',
     'scissors': 'paper',
     'paper': 'rock'
 }
+WIN_POINTS = 10  # 승리 시 얻는 포인트
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def play_rock_scissors_papers(request):
     user = request.user
     user_choice = request.data.get('choice')
-    bot_choice = random.choice(choices)
     today = timezone.localdate()
+
+    # 입력 검증
+    if user_choice not in CHOICES:
+        return Response({'error': '잘못된 선택입니다. rock, paper, scissors 중 하나를 선택하세요.'}, status=400)
 
     # 하루 한번만 게임 가능
     if user.last_game_played == today:
-        return Response({'error': 'You can only play once a day.'}, status=400)
+        return Response({'error': '게임은 하루에 한 번만 플레이할 수 있습니다.'}, status=400)
 
-    # 가위 바위 보 승리 조건:
-    if user_choice not in choices:
-        return Response({'error': 'Invalid choice. Use rock, paper, or scissors.'}, status=400)
+    # 봇의 선택
+    bot_choice = random.choice(CHOICES)
 
-    if beats[user_choice] == bot_choice:
+    # 승패 판정
+    if BEATS[user_choice] == bot_choice:
         result = 'win'
-        user.bonus_points += 10
-        user.save()
+        user.bonus_points += WIN_POINTS
     elif user_choice == bot_choice:
         result = 'draw'
     else:

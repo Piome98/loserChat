@@ -18,6 +18,83 @@ HEADERS = {
     'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
 }
 
+def _parse_investing_news_item(item, symbol=None):
+    """인베스팅닷컴 뉴스 항목 파싱을 위한 공통 함수"""
+    korea_tz = pytz.timezone('Asia/Seoul')
+    
+    # 제목과 링크
+    title_elem = item.select_one('a.title') or item.select_one('a.js-article-title')
+    if not title_elem:
+        return None
+        
+    title = title_elem.text.strip()
+    url = title_elem['href']
+    if not url.startswith('http'):
+        url = f"https://kr.investing.com{url}"
+    
+    # 요약 (있는 경우)
+    summary_elem = item.select_one('p') or item.select_one('div.textDiv')
+    summary = summary_elem.text.strip() if summary_elem else ""
+    
+    # 출처와 날짜
+    source_elem = item.select_one('span.sourceName') or item.select_one('span.js-article-source')
+    source = source_elem.text.strip() if source_elem else "인베스팅닷컴"
+    
+    date_elem = item.select_one('span.date') or item.select_one('span.js-article-date')
+    date_str = date_elem.text.strip() if date_elem else datetime.now().strftime("%Y-%m-%d %H:%M")
+    
+    # 날짜 파싱 시도
+    try:
+        # "1시간 전", "10분 전" 등의 상대적 시간 처리
+        if '전' in date_str:
+            published_at = datetime.now(korea_tz)
+        else:
+            # 특정 형식의 날짜 파싱 시도
+            published_at = datetime.strptime(date_str, "%Y-%m-%d %H:%M")
+            published_at = korea_tz.localize(published_at)
+    except ValueError:
+        published_at = datetime.now(korea_tz)
+    
+    # 카테고리 설정
+    if symbol:
+        category = '종목'
+    else:
+        # 카테고리 추출
+        category_elem = item.select_one('span.articleDetails') or item.select_one('a.categoryLink')
+        if category_elem:
+            category_text = category_elem.text.strip()
+            if '주식' in category_text:
+                category = '증시'
+            elif '경제' in category_text:
+                category = '경제'
+            elif '기업' in category_text or '산업' in category_text:
+                category = '기업'
+            elif '세계' in category_text or '국제' in category_text:
+                category = '국제'
+            else:
+                category = '경제'
+        else:
+            category = '경제'
+    
+    # 이미지 URL (있는 경우)
+    img_elem = item.select_one('img')
+    img_url = img_elem['src'] if img_elem and 'src' in img_elem.attrs else None
+    
+    # 관련 종목
+    related_symbols = [symbol] if symbol else []
+    
+    # 데이터 반환
+    return {
+        'title': title,
+        'content_summary': summary,
+        'source': source,
+        'published_at': published_at,
+        'url': url,
+        'category': category,
+        'image_url': img_url,
+        'related_symbols': related_symbols
+    }
+
 def crawl_news_from_investing():
     """인베스팅닷컴에서 경제 뉴스 크롤링"""
     try:
@@ -35,88 +112,25 @@ def crawl_news_from_investing():
         news_items = soup.select('div.largeTitle article') or soup.select('div.js-article-item')
         
         news_data = []
-        korea_tz = pytz.timezone('Asia/Seoul')
         
         for idx, item in enumerate(news_items[:15]):  # 상위 15개 뉴스만 처리
             try:
-                # 제목과 링크
-                title_elem = item.select_one('a.title') or item.select_one('a.js-article-title')
-                if not title_elem:
-                    continue
+                news_item = _parse_investing_news_item(item)
+                if news_item:
+                    news_data.append(news_item)
                     
-                title = title_elem.text.strip()
-                url = title_elem['href']
-                if not url.startswith('http'):
-                    url = f"https://kr.investing.com{url}"
-                
-                # 요약 (있는 경우)
-                summary_elem = item.select_one('p') or item.select_one('div.textDiv')
-                summary = summary_elem.text.strip() if summary_elem else ""
-                
-                # 출처와 날짜
-                source_elem = item.select_one('span.sourceName') or item.select_one('span.js-article-source')
-                source = source_elem.text.strip() if source_elem else "인베스팅닷컴"
-                
-                date_elem = item.select_one('span.date') or item.select_one('span.js-article-date')
-                date_str = date_elem.text.strip() if date_elem else datetime.now().strftime("%Y-%m-%d %H:%M")
-                
-                # 날짜 파싱 시도
-                try:
-                    # "1시간 전", "10분 전" 등의 상대적 시간 처리
-                    if '전' in date_str:
-                        published_at = datetime.now(korea_tz)
-                    else:
-                        # 특정 형식의 날짜 파싱 시도
-                        published_at = datetime.strptime(date_str, "%Y-%m-%d %H:%M")
-                        published_at = korea_tz.localize(published_at)
-                except ValueError:
-                    published_at = datetime.now(korea_tz)
-                
-                # 카테고리 추출
-                category_elem = item.select_one('span.articleDetails') or item.select_one('a.categoryLink')
-                if category_elem:
-                    category_text = category_elem.text.strip()
-                    if '주식' in category_text:
-                        category = '증시'
-                    elif '경제' in category_text:
-                        category = '경제'
-                    elif '기업' in category_text or '산업' in category_text:
-                        category = '기업'
-                    elif '세계' in category_text or '국제' in category_text:
-                        category = '국제'
-                    else:
-                        category = '경제'
-                else:
-                    category = '경제'
-                
-                # 이미지 URL (있는 경우)
-                img_elem = item.select_one('img')
-                img_url = img_elem['src'] if img_elem and 'src' in img_elem.attrs else None
-                
-                # 데이터 저장
-                news_data.append({
-                    'title': title,
-                    'content_summary': summary,
-                    'source': source,
-                    'published_at': published_at,
-                    'url': url,
-                    'category': category,
-                    'image_url': img_url,
-                    'related_symbols': []  # 기본 빈 리스트
-                })
-                
-                # 데이터베이스에 저장 (중복 방지)
-                NewsArticle.objects.update_or_create(
-                    url=url,
-                    defaults={
-                        'title': title,
-                        'content_summary': summary,
-                        'source': source,
-                        'published_at': published_at,
-                        'category': category,
-                        'image_url': img_url,
-                    }
-                )
+                    # 데이터베이스에 저장 (중복 방지)
+                    NewsArticle.objects.update_or_create(
+                        url=news_item['url'],
+                        defaults={
+                            'title': news_item['title'],
+                            'content_summary': news_item['content_summary'],
+                            'source': news_item['source'],
+                            'published_at': news_item['published_at'],
+                            'category': news_item['category'],
+                            'image_url': news_item['image_url'],
+                        }
+                    )
                 
             except Exception as e:
                 logger.error(f"뉴스 항목 파싱 오류: {str(e)}")
@@ -223,79 +237,30 @@ def fetch_news_by_symbol(symbol):
         news_items = soup.select('div.searchSectionMain article') or soup.select('div.js-article-item')
         
         news_data = []
-        korea_tz = pytz.timezone('Asia/Seoul')
         
         for idx, item in enumerate(news_items[:10]):  # 상위 10개 뉴스만 처리
             try:
-                # 제목과 링크
-                title_elem = item.select_one('a.title') or item.select_one('a.js-article-title')
-                if not title_elem:
-                    continue
+                news_item = _parse_investing_news_item(item, symbol)
+                if news_item:
+                    news_data.append(news_item)
                     
-                title = title_elem.text.strip()
-                url = title_elem['href']
-                if not url.startswith('http'):
-                    url = f"https://kr.investing.com{url}"
-                
-                # 요약 (있는 경우)
-                summary_elem = item.select_one('p') or item.select_one('div.textDiv')
-                summary = summary_elem.text.strip() if summary_elem else ""
-                
-                # 출처와 날짜
-                source_elem = item.select_one('span.sourceName') or item.select_one('span.js-article-source')
-                source = source_elem.text.strip() if source_elem else "인베스팅닷컴"
-                
-                date_elem = item.select_one('span.date') or item.select_one('span.js-article-date')
-                date_str = date_elem.text.strip() if date_elem else datetime.now().strftime("%Y-%m-%d %H:%M")
-                
-                # 날짜 파싱 시도
-                try:
-                    # "1시간 전", "10분 전" 등의 상대적 시간 처리
-                    if '전' in date_str:
-                        published_at = datetime.now(korea_tz)
-                    else:
-                        # 특정 형식의 날짜 파싱 시도
-                        published_at = datetime.strptime(date_str, "%Y-%m-%d %H:%M")
-                        published_at = korea_tz.localize(published_at)
-                except ValueError:
-                    published_at = datetime.now(korea_tz)
-                
-                # 기본 카테고리는 종목 관련
-                category = '종목'
-                
-                # 이미지 URL (있는 경우)
-                img_elem = item.select_one('img')
-                img_url = img_elem['src'] if img_elem and 'src' in img_elem.attrs else None
-                
-                # 데이터 저장
-                news_data.append({
-                    'title': title,
-                    'content_summary': summary,
-                    'source': source,
-                    'published_at': published_at,
-                    'url': url,
-                    'category': category,
-                    'image_url': img_url,
-                    'related_symbols': [symbol]  # 관련 종목 추가
-                })
-                
-                # 데이터베이스에 저장 (중복 방지)
-                article, created = NewsArticle.objects.update_or_create(
-                    url=url,
-                    defaults={
-                        'title': title,
-                        'content_summary': summary,
-                        'source': source,
-                        'published_at': published_at,
-                        'category': category,
-                        'image_url': img_url,
-                    }
-                )
-                
-                # 관련 종목 업데이트
-                if symbol not in article.related_symbols:
-                    article.related_symbols.append(symbol)
-                    article.save()
+                    # 데이터베이스에 저장 (중복 방지)
+                    article, created = NewsArticle.objects.update_or_create(
+                        url=news_item['url'],
+                        defaults={
+                            'title': news_item['title'],
+                            'content_summary': news_item['content_summary'],
+                            'source': news_item['source'],
+                            'published_at': news_item['published_at'],
+                            'category': news_item['category'],
+                            'image_url': news_item['image_url'],
+                        }
+                    )
+                    
+                    # 관련 종목 업데이트
+                    if symbol not in article.related_symbols:
+                        article.related_symbols.append(symbol)
+                        article.save()
                 
             except Exception as e:
                 logger.error(f"종목 뉴스 항목 파싱 오류: {str(e)}")
@@ -921,137 +886,4 @@ def crawl_naver_market_indices():
     except Exception as e:
         logger.error(f"네이버 금융 시장 지수 크롤링 중 오류 발생: {str(e)}")
         logger.exception("상세 오류 스택:")
-        return []
-
-def crawl_korean_index_daily_prices(index_code):
-    """
-    네이버 금융에서 국내 지수(KOSPI, KOSDAQ) 일별 시세 데이터를 크롤링합니다.
-    
-    Args:
-        index_code (str): 'KOSPI' 또는 'KOSDAQ'과 같은 지수 코드
-        
-    Returns:
-        list: 일별 시세 데이터 목록 (날짜, 종가, 전일비, 등락률, 거래량)
-    """
-    logger.info(f"국내 지수 {index_code} 일별 시세 크롤링 시작")
-    
-    url = f'https://finance.naver.com/sise/sise_index_day.naver?code={index_code}'
-    
-    try:
-        # 다양한 User-Agent 설정
-        user_agents = [
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/113.0',
-        ]
-        
-        # 헤더 설정
-        headers = {
-            'User-Agent': random.choice(user_agents),
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-            'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
-        }
-        
-        # 1페이지부터 시작해서 최근 90일 정도의 데이터를 가져옵니다
-        all_data = []
-        page = 1
-        max_pages = 10  # 90일 정도의 데이터를 위해 약 10페이지
-        
-        while page <= max_pages:
-            page_url = f'{url}&page={page}'
-            logger.info(f"페이지 {page} 크롤링: {page_url}")
-            
-            # 요청 사이에 약간의 지연 추가
-            if page > 1:
-                time.sleep(random.uniform(0.5, 1.5))
-                
-            response = requests.get(page_url, headers=headers, timeout=10)
-            response.raise_for_status()
-            response.encoding = 'euc-kr'  # 네이버는 euc-kr 인코딩 사용
-            
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # 테이블 가져오기
-            table = soup.select('table.type_1 tr')
-            
-            # 이 페이지에서 데이터를 찾았는지 확인하는 플래그
-            found_data_in_page = False
-            
-            for row in table:
-                # 날짜 셀이 있는지 확인
-                date_cell = row.select_one('td.date')
-                if not date_cell:
-                    continue
-                
-                # 숫자 셀들 (종가, 전일비, 등락률, 거래량)
-                cells = row.select('td.number')
-                if len(cells) < 4:  # 최소 4개의 셀이 필요
-                    continue
-                
-                # 날짜와 데이터 추출
-                date_str = date_cell.text.strip()
-                if not date_str:
-                    continue
-                
-                found_data_in_page = True
-                
-                # 종가, 전일비, 등락률, 거래량
-                close_price = cells[0].text.strip().replace(',', '')
-                change = cells[1].text.strip().replace(',', '')
-                change_percent = cells[2].text.strip().replace('%', '')
-                
-                # 등락 방향 확인
-                is_increase = False
-                is_decrease = False
-                
-                img_tag = cells[1].select_one('img')
-                if img_tag:
-                    img_src = img_tag.get('src', '')
-                    if 'up' in img_src:
-                        is_increase = True
-                    elif 'down' in img_src:
-                        is_decrease = True
-                
-                # 등락률에 부호 추가
-                if is_increase and not change_percent.startswith('+'):
-                    change_percent = f"+{change_percent}"
-                elif is_decrease and not change_percent.startswith('-'):
-                    change_percent = f"-{change_percent}"
-                
-                # 거래량
-                volume = cells[3].text.strip().replace(',', '')
-                
-                # 날짜 형식 변환 (YYYY.MM.DD -> YYYY-MM-DD)
-                date_parts = date_str.split('.')
-                if len(date_parts) == 3:
-                    formatted_date = f"{date_parts[0]}-{date_parts[1].zfill(2)}-{date_parts[2].zfill(2)}"
-                else:
-                    formatted_date = date_str
-                
-                # 데이터 저장
-                data_item = {
-                    'date': formatted_date,
-                    'close': close_price,
-                    'change': change,
-                    'change_percent': change_percent,
-                    'volume': volume,
-                    'is_increase': is_increase,
-                    'is_decrease': is_decrease
-                }
-                
-                all_data.append(data_item)
-            
-            # 이 페이지에서 데이터를 찾지 못했다면 마지막 페이지일 수 있음
-            if not found_data_in_page:
-                logger.info(f"페이지 {page}에서 데이터를 찾지 못했습니다. 크롤링 종료.")
-                break
-                
-            page += 1
-        
-        logger.info(f"국내 지수 {index_code} 일별 시세 크롤링 완료: {len(all_data)}개 데이터")
-        return all_data
-        
-    except Exception as e:
-        logger.error(f"국내 지수 {index_code} 일별 시세 크롤링 오류: {str(e)}")
-        logger.exception("상세 오류:")
         return []
