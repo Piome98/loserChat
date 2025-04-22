@@ -6,6 +6,8 @@ from rest_framework_simplejwt.tokens import AccessToken
 from django.contrib.auth import get_user_model
 from accounts.models import User
 from django.db.models import F
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 
 User = get_user_model()
 
@@ -13,28 +15,22 @@ class BaseChatConsumer(AsyncWebsocketConsumer):
     """기본 채팅 컨슈머 - 공통 기능"""
     
     async def connect(self):
-        print("연결 시작")
         # 토큰 검증
         self.user = await self.get_user_from_token()
         if not self.user:
-            print("토큰 검증 실패로 연결 종료")
             await self.close(code=4001)
             return
         
-        print(f"그룹에 추가: {self.room_group_name}")
         # 그룹에 추가
         await self.channel_layer.group_add(
             self.room_group_name,
             self.channel_name
         )
         
-        print("WebSocket 연결 수락")
         await self.accept()
         
-        print("참여자 수 업데이트")
         # 참여자 수 업데이트 및 알림
         participants_info = await self.update_participants_count()
-        print(f"참여자 수: {participants_info['count']}")
         
         # 연결 성공 메시지 전송
         await self.send(text_data=json.dumps({
@@ -44,15 +40,12 @@ class BaseChatConsumer(AsyncWebsocketConsumer):
         }))
     
     async def disconnect(self, close_code):
-        print(f"WebSocket 연결 종료 코드: {close_code}")
         # 그룹에서 제거
         if hasattr(self, 'room_group_name'):
-            print(f"그룹에서 제거: {self.room_group_name}")
             await self.channel_layer.group_discard(
                 self.room_group_name,
                 self.channel_name
             )
-        print("연결 종료 완료")
     
     async def receive(self, text_data):
         data = json.loads(text_data)
@@ -85,10 +78,8 @@ class BaseChatConsumer(AsyncWebsocketConsumer):
     def get_user_from_token(self):
         """토큰에서 사용자 정보 추출"""
         try:
-            print("토큰 검증 시작")
             # 쿼리 파라미터에서 토큰 추출
             query_string = self.scope.get('query_string', b'').decode()
-            print(f"쿼리 문자열: {query_string}")
             
             token = None
             # 쿼리 문자열 파싱
@@ -101,22 +92,15 @@ class BaseChatConsumer(AsyncWebsocketConsumer):
                 token = params.get('token')
             
             if not token:
-                print("토큰이 없습니다")
                 return None
-            
-            print(f"토큰: {token[:10]}...")
             
             # 토큰 검증
             access_token = AccessToken(token)
             user_id = access_token['user_id']
             
             user = User.objects.get(id=user_id)
-            print(f"사용자 인증 성공: {user.username}")
             return user
         except Exception as e:
-            print(f"토큰 검증 오류: {str(e)}")
-            import traceback
-            traceback.print_exc()
             return None
     
     @database_sync_to_async
@@ -245,3 +229,22 @@ class LoserChatConsumer(BaseChatConsumer):
         return {
             'count': participants_count
         }
+
+# 메시지 최대 개수 제한 (300개)
+@receiver(post_save, sender=ChatMessage)
+def limit_messages(sender, instance, **kwargs):
+    # 방이 있는 경우 (일반 토론방)
+    if instance.chatroom:
+        messages_count = ChatMessage.objects.filter(chatroom=instance.chatroom).count()
+        if messages_count > 300:
+            # 가장 오래된 메시지부터 삭제 (bulk delete 사용)
+            oldest_messages = ChatMessage.objects.filter(chatroom=instance.chatroom).order_by('created_at')[:messages_count-300]
+            ChatMessage.objects.filter(id__in=oldest_messages.values_list('id', flat=True)).delete()
+    
+    # 패잔병 토론방 메시지인 경우
+    if instance.room_type == 'loser':
+        loser_messages_count = ChatMessage.objects.filter(room_type='loser').count()
+        if loser_messages_count > 300:
+            # 가장 오래된 메시지부터 삭제 (bulk delete 사용)
+            oldest_loser_messages = ChatMessage.objects.filter(room_type='loser').order_by('created_at')[:loser_messages_count-300]
+            ChatMessage.objects.filter(id__in=oldest_loser_messages.values_list('id', flat=True)).delete()

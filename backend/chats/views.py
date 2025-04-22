@@ -19,7 +19,7 @@ def get_messages(request, room_id):
     """특정 토론방의 메시지를 가져옵니다."""
     try:
         chatroom = ChatRoom.objects.get(id=room_id)
-        messages = ChatMessage.objects.filter(chatroom=chatroom).order_by('-created_at')[:300]  # 최신 300개만 가져옴
+        messages = ChatMessage.objects.filter(chatroom=chatroom).order_by('created_at')[:300]  # 최신 300개만 가져옴
         
         serializer = ChatMessageSerializer(messages, many=True)
         return Response({
@@ -35,7 +35,7 @@ def get_loser_messages(request):
     """패잔병 토론방의 메시지를 가져옵니다."""
     try:
         loser_room = ChatRoom.objects.get(stock__isnull=True)  # 패잔병 토론방 (stock이 없는 방)
-        messages = ChatMessage.objects.filter(room_type='loser').order_by('-created_at')[:300]  # 최신 300개만 가져옴
+        messages = ChatMessage.objects.filter(room_type='loser').order_by('created_at')[:300]  # 최신 300개만 가져옴
         
         serializer = ChatMessageSerializer(messages, many=True)
         return Response({

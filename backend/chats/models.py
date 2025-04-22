@@ -37,7 +37,7 @@ class ChatMessage(models.Model):
     room_type = models.CharField(max_length=10, choices=[('stock', 'Stock'), ('loser', 'Loser')])
     
     class Meta:
-        ordering = ['-created_at']
+        ordering = ['created_at']
         indexes = [
             models.Index(fields=['chatroom', 'created_at']),
             models.Index(fields=['room_type', 'created_at']),
@@ -45,24 +45,3 @@ class ChatMessage(models.Model):
         
     def __str__(self):
         return f"{self.user.username}: {self.content[:30]}"
-
-# 메시지 최대 개수 제한 (300개)
-@receiver(post_save, sender=ChatMessage)
-def limit_messages(sender, instance, **kwargs):
-    # 방이 있는 경우 (일반 토론방)
-    if instance.chatroom:
-        messages_count = ChatMessage.objects.filter(chatroom=instance.chatroom).count()
-        if messages_count > 300:
-            # 가장 오래된 메시지부터 삭제
-            oldest_messages = ChatMessage.objects.filter(chatroom=instance.chatroom).order_by('created_at')[:messages_count-300]
-            for msg in oldest_messages:
-                msg.delete()
-    
-    # 패잔병 토론방 메시지인 경우
-    if instance.room_type == 'loser':
-        loser_messages_count = ChatMessage.objects.filter(room_type='loser').count()
-        if loser_messages_count > 300:
-            # 가장 오래된 메시지부터 삭제
-            oldest_loser_messages = ChatMessage.objects.filter(room_type='loser').order_by('created_at')[:loser_messages_count-300]
-            for msg in oldest_loser_messages:
-                msg.delete()
