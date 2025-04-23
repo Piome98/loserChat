@@ -123,7 +123,7 @@ const ChatRoom = ({ roomId, roomType = 'stock' }) => {
           setError(null);
         };
         
-        socket.onmessage = (event) => {
+        socket.onmessage = async (event) => {
           if (!isComponentMounted) return;
           
           try {
@@ -139,16 +139,22 @@ const ChatRoom = ({ roomId, roomType = 'stock' }) => {
                   return prevMessages;
                 }
                 
-                if (newMsg.user?.username === user?.username && 
-                    newMsg.content?.startsWith('!')) {
-                  const botResponse = processBotCommand(newMsg.content, user);
-                  if (botResponse) {
-                    return [...prevMessages, newMsg, botResponse];
-                  }
-                }
-                
+                // processBotCommand가 Promise를 반환하므로 여기서는 직접 호출할 수 없음
+                // 응답을 따로 처리하는 로직으로 변경
                 return [...prevMessages, newMsg];
               });
+              
+              // 새 메시지가 자신의 메시지이고 명령어라면 봇 응답을 처리
+              if (newMsg.user?.username === user?.username && 
+                  newMsg.content?.startsWith('!')) {
+                console.log('챗봇 명령어 감지:', newMsg.content);
+                // 비동기 처리를 위해 separate effect로 처리
+                const botResponse = await processBotCommand(newMsg.content, user);
+                console.log('챗봇 응답 결과:', botResponse);
+                if (botResponse) {
+                  setMessages(prev => [...prev, botResponse]);
+                }
+              }
             } else if (data.type === 'user_joined') {
               setParticipantsCount(data.participants_count);
               
@@ -275,23 +281,27 @@ const ChatRoom = ({ roomId, roomType = 'stock' }) => {
           room_type: roomType,
           room_id: roomType === 'loser' ? null : roomId
         }));
+        // 웹소켓으로 전송했을 때는 onmessage 이벤트에서 처리됨
       } else {
+        // 웹소켓 연결이 없을 때는 HTTP API로 전송
         if (roomType === 'loser') {
           await chatAPI.sendLoserMessage(messageContent);
         } else {
           await chatAPI.sendMessage(roomId, messageContent);
         }
         
+        // 메시지 로드 후 명령어 처리
+        await loadMessages();
+        
+        // 명령어 처리 - 비동기 처리 개선
         if (messageContent.startsWith('!')) {
-          const botResponse = processBotCommand(messageContent, user);
+          console.log('HTTP 전송 후 챗봇 명령어 처리:', messageContent);
+          const botResponse = await processBotCommand(messageContent, user);
+          console.log('HTTP 전송 후 챗봇 응답 결과:', botResponse);
           if (botResponse) {
-            setTimeout(() => {
-              setMessages(prev => [...prev, botResponse]);
-            }, 500);
+            setMessages(prev => [...prev, botResponse]);
           }
         }
-        
-        await loadMessages();
       }
     } catch (error) {
       console.error('메시지 전송 오류:', error);
@@ -435,7 +445,7 @@ const ChatRoom = ({ roomId, roomType = 'stock' }) => {
             </Box>
             
             {/* 메시지 목록 - 분리된 컴포넌트 사용 */}
-            {messages.filter(message => !message.id.toString().startsWith('temp-')).map((message) => {
+            {messages.filter(message => message && message.id && typeof message.id.toString === 'function' && !message.id.toString().startsWith('temp-')).map((message) => {
               // 챗봇 메시지인 경우 전용 컴포넌트 사용
               if (isBotMessage(message)) {
                 return <ChatbotMessage key={message.id} message={message} />;
